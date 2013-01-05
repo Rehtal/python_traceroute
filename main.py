@@ -6,47 +6,79 @@ Main function that control the whole program.
 This program is quite easy so that I don't need to use any special
 techniques. Plain serial coding is enough.
 
+This program accept arguments for detailed controlling.
+
 """
 
 import socket
+import argparse
+
+def init_argparse():
+	parse = argparse.ArgumentParser(description="Python traceroute.", 
+		prog='python_traceroute', epilog="This traceroute will only\
+		use UDP to probe. ICMP or TCP SYN are not implemented here.")
+	parse.add_argument('-m', metavar='max_ttl', default=30, type=int,
+		help="Maximum number of hops (max time-to-live value). The\
+		default is 30.")
+	parse.add_argument('-p', metavar='port', default=33434, type=int,
+		help="For UDP tracing, specifies the destination port.")
+	parse.add_argument('-w', metavar='waittime', default=5, type=int,
+		help="Set the time (in seconds) to wait for a response to a\
+		probe (default 5.0 sec).")
+	parse.add_argument('-f', metavar='first_ttl', default=1, type=int,
+		help="Specifies with what TTL to start. Defaults to 1")
+	
+	return parse.parse_args()
 
 def main(dest_name):
+	args = init_argparse()
+	args = vars(args)
+
+	# Default port is 33434.
+	port = args['p'] 
+	# Default max hops (TTL) is 30.
+	max_hops = args['m']
+	# Default begin ttl is 1.
+	ttl = args['f']
+
 	dest_addr = socket.gethostbyname(dest_name)
-	port = 33434
-	max_hops = 30
-	icmp = socket.getprotobyname('icmp')
-	udp = socket.getprotobyname('udp')
-	ttl = 1
+
+	# Infinite loop until reach destination or TTL reach maximum.
 	while True:
-		recv_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, icmp)
-		send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, udp)
+		recv_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW,
+			socket.IPPROTO_ICMP)
+		send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+			socket.IPPROTO_UDP)
+
 		send_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
 		recv_socket.bind(("", port))
 		send_socket.sendto("", (dest_addr, port))
-		curr_addr = None
-		curr_name = None
+		route_addr = None
+		route_name = None
 		try:
-			recv_socket.settimeout(5)
-			_, curr_addr = recv_socket.recvfrom(512)
-			curr_addr = curr_addr[0]
+			# Default timeout is 5 seconds.
+			recv_socket.settimeout(args['w'])
+			route_addr = recv_socket.recvfrom(512)[1]
+			route_addr = route_addr[0]
 			try:
-				curr_name = socket.gethostbyaddr(curr_addr)[0]
+				route_name = socket.gethostbyaddr(route_addr)[0]
 			except socket.error:
-				curr_name = curr_addr
+				route_name = route_addr
 		except socket.error:
 			pass
-		finally:
-			send_socket.close()
-			recv_socket.close()
 
-		if curr_addr is not None:
-			curr_host = "%s (%s)" % (curr_name, curr_addr)
+		send_socket.close()
+		recv_socket.close()
+
+		if route_addr is not None:
+			route_host = "%s (%s)" % (route_name, route_addr)
 		else:
-			curr_host = "*"
-		print "%d\t%s" % (ttl, curr_host)
+			route_host = "*"
+		print "%d\t%s" % (ttl, route_host)
 
 		ttl += 1
-		if curr_addr == dest_addr or ttl > max_hops:
+		port += 1
+		if route_addr == dest_addr or ttl > max_hops:
 			break
 
 if __name__ == "__main__":
